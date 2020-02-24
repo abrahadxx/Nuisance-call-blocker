@@ -1,6 +1,11 @@
 \ audio.8th  D:\.8th\mylibs\libs\CallBlock\audio.8th
 
-0 b:new var, sound_data 
+\ audio files should be recorded in .wav format with 8000Hz sample rate and saved as unsigned 8-bit PCM
+\ see this link for details of recording a file
+\ https://iotbytes.wordpress.com/play-audio-file-on-phone-line-with-raspberry-pi/
+
+
+0 b:new var, sound_data 	\ this buffer holds processed sound file
 
 : add_byte	\ (buff,byte -- buff) add a byte to buffer
 	1 b:new true b:writable 0 rot b:! b:+ ;
@@ -37,7 +42,6 @@ a:new var, sound_chunks		\ array of buffers
 	read_sound_data
 	split_sound ;
 
-\ create_sound_data						\ created at compile time
 
 : send_chunk	\ ( b -- ) send the sound buffer then pause for chunk_delay
 	send_string chunk_delay @ G:sleep ;
