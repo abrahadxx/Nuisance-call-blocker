@@ -78,6 +78,7 @@
 
 : save_whitefile	\ ( -- ) copy list from memory to file
 	whitefile @ f:open
+	
 	0 f:seek						\ write from start of file
 	whitelist @ ( write_list )		\ array,items
 	a:each							\ add each number to file
@@ -102,7 +103,7 @@
 
 : white	\ ( number$ -- )  add number to whitelist
 	load_whitelist
-	whitelist @ swap 2dup in_list? if drop ;; then	\ already in list
+	whitelist @ swap 2dup in_list? if 2drop ;; then	\ already in list
 	(add_to_list) drop							\ number to memory
 	save_whitefile ;							\ save to file 
 

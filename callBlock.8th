@@ -94,27 +94,27 @@ true var, voice			\ true for audio message, false for simple hang up
 		again
 		;
 
-: process_private		\ ( n$ -- ) number witheld
-	drop ;
+: process_private		\ (  -- ) number witheld
+	 ;
 
-: process_unknown		\ ( n$ -- ) new number
-	drop ;
+: process_unknown		\ ( n$  -- ) new number
+	 drop ;
 	
 : check_number	 \ ( number$ -- )
-
+	
 	\ do nothing if number is on whitelist
-	dup whitelist @ in_list? 
+	whitelist @ over in_list? 
 	if drop "\tAccept" action ! ;; then
 
 	\ hang up if number on blacklist
-	dup blacklist @ in_list?
+	blacklist @ over in_list?
 	if drop "\tBlocked" action ! hang_up ;; then 
 
 	\ that leaves withheld and new/unknown numbers
-	dup "--PRIVATE--" s:= if "\tWitheld" action ! process_private ;; then
+	dup "--PRIVATE--" s:= if  drop "\tWitheld" action ! process_private ;; then
 	
 	\ that leaves unknown
-	dup "\tUnknown" action ! process_unknown ;
+	"\tUnknown" action ! process_unknown ;
 
 : process_number	\ (number$ -- ) store and process number 
 	s:len 1 n:< if drop ;then	\ ignore empty string

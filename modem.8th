@@ -7,7 +7,6 @@ true var, comms_ok
 : wait_response	 \ ("c" --)	  wait for single char string "c" followed by cr
 	repeat
 			get_line			\ returns at least one char
-\			dup dump$
 			1 s:rsub			\ get last char before cr
 			over s:=
 	until!
@@ -22,15 +21,13 @@ true var, comms_ok
 	
 : on_hook	\ ( -- ) hang up
 	clear_serial	\  noise picked up
-\	"ATH0\r\n" "0" AT_command 		\ hang up
 	"ATH0\r\n" send_string ;		\ hang up
  
 : modem_init	\ ( -- )
 	"ATZ\r\n"	send_string			\ reset to profile 0
 	"ATE0\r\n"  send_string			\ turn off echo
 	clear_serial
-	"ATV0\r\n"  "0" AT_command			\ returns single char numeric result to save traffic - normal code
-\	"ATV1\r\n"  "0" "0" AT_command			\ return text result for debugging
+	"ATV0\r\n"  "0" AT_command			\ returns single char numeric result to save traffic
 	"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
 	"AT&H0\r\n" "0" AT_command			\ set software flow control off
 	"AT+GCI=B4\r\n"	"0" AT_command		\ set modem to UK
@@ -53,3 +50,4 @@ true var, comms_ok
 		"AT+VLS=0\r\n" "0" AT_command	\ disconnect
 		"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
 		on_hook ;
+		

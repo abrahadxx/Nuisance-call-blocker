@@ -15,10 +15,11 @@
 	( check_data ) b:each!				\ copy to processed string but double up on <DLE> bytes
 	sound_data ! ;
 
-\ in order to prevent overun of modem buffer, need to break sound_data into chunks
+\ in order to prevent over run of modem buffer, need to break sound_data into chunks
+\ and send to modem with delay between chunks
 
 2048 var, chunk_size	
-0.1 var, chunk_delay		\ time to wait between sending each chunk_delay
+0.25 var, chunk_delay		\ time to wait between sending each chunk_delay
 
 a:new var, sound_chunks		\ array of buffers
 	
@@ -32,7 +33,7 @@ a:new var, sound_chunks		\ array of buffers
 	again ;	
 	
 
-: create_sound_data					
+: create_sound_data		
 	read_sound_data
 	split_sound ;
 
