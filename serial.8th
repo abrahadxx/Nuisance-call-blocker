@@ -1,13 +1,22 @@
 \ serial.8th  General purpose serial io words
 
+\ uses separate task to monitor input
+
+"serial" .cf
+
 0x10 constant <DLE>
 0x03 constant <ETX>
 0x0d constant <CR>
 0x0a constant <LF>
+0x1b constant <ESC>
+0x07 constant <BEL>	
+
+"\x10\x03" constant <DLE><ETX>
 
 null var, port
 
- : sio_setup	\ ( -- )
+: sio_setup	\ ( -- ) Note: must have dtrctl and rtsctl set to 1 for "hardware" handshake
+	cr "sio_setup" . cr
 	port @
  {
 	"inxon":	false,
@@ -32,99 +41,154 @@ null var, port
  }   sio:opts! drop 
 ;
 
+"" var, inp_buff		\ stores chars read from serial port
+"" var, out_buff		\ stores chars to be output
+
+: srl_in?	\ ( -- f) true if srl buffer not empty
+	inp_buff lock @ s:len inp_buff unlock drop nip ;
+
+: clear_serial
+	repeat
+		"" clear inp_buff lock !
+		inp_buff unlock drop 
+		0.1 sleep 
+		srl_in?	
+	while!	;	
+
+
+modem? @ #if
+	
+: check_out		\ (sio -- sio ) if anything in out_buff send to serial port
+		out_buff lock @ s:len 
+		if  sio:write "" s:clear out_buff ! then 
+		drop
+		out_buff unlock drop ;
+		
+: check_in		\ ( sio -- sio)		
+		"" s:clear 1000 sio:read null? nip
+		if
+			drop
+		else
+			inp_buff lock @ swap s:+ inp_buff ! inp_buff unlock drop
+			cbtask_id @ t:notify			\ wake up main task
+		then ;
+
+#else
+
+: check_out		\ (sio -- sio ) if anything in out_buff send to serial port
+		out_buff lock @ s:len 
+		if  "" s:clear out_buff ! then 
+		out_buff unlock drop ;
+
+: check_in		\ ( sio -- sio)		
+		con:key?
+		if
+			con:key 
+			dup <ESC> n:= if drop <BEL> t:main t:notify then
+			dup putc dup <CR> n:= if <LF> putc then 
+			inp_buff lock @ swap s:+ inp_buff ! inp_buff unlock drop
+			cbtask_id @ t:notify			\ wake up main task
+		then ;
+
+#then	
+
+: serial_io		\ ( -- ) task to manage serial data
+	inp_buff @ s:clear inp_buff !
+	out_buff @ s:clear out_buff !
+	port @							\ keep sio on stack
+	repeat
+		check_out					\ out_buff to serial port
+		check_in					\ serial input to inp_buff
+		1 sleep
+	again drop ;
+
+
 
 : serial_init		\ ( --)
 	port @ null? nip
 	if			
 		com_port @ sio:open port !
-		sio_setup 
-	then ;
-		
+	then 
+	sio_setup ;
+
+: start_serial_task
+	' serial_io t:task
+	srl_task_id !
+	;
+
 : close_serial
+	srl_task_id @ 1 t:kill
 	port @ null; 
 	sio:close 
 	null port ! ;	
-	
-: dump$  	\ ( s -- ) display strings for debugging
-	dup . cr
-	( "<" . . ">" . ) s:each! cr
-	;
-	
-: get_char?	\ ( -- "c",true | false) return next input as single char string,true OR false	
-	port @ "" s:clear 1 sio:read 				\ -- sio, s, n
-	rot drop							\ -- s, n
-	null? nip if drop false else true then
-	;
-	
-: get_char	\ ( -- "c" ) wait for and return next input char 
-	repeat 	get_char? 
-\			dup not if con:key? if drop "" con:key s:<+ true then then    \ for debugging
-	until! ;	
-	
-: put_char	\ ( c-- )	send single byte to sio
-		"" swap s:<+				\ single char string
-		port @ swap sio:write 2drop	;		\ write char to port
 
-: get_line				\  (  -- s )  read chars into string up to cr char
- 	"" s:clear		 				
+: send_string	\ ( c/string-- )	send byte or string to sio
+	out_buff lock @ swap s:+ out_buff ! out_buff unlock drop 
+	srl_task_id @ t:notify ;			\ wake up serial task to send data
+		
+		
+: (get_line)		\ (  -- s ) line terminated in cr or an empty string
+	inp_buff lock @ 
+	<CR> s:search
+	null?	if						\ no cr
+					2drop "" 			\ return empty string
+			else
+					n:1+ s:/			\ split string at cr
+					1 a:@				\ get remainder or null if none
+					null? if drop "" s:clear then
+					inp_buff !
+					0 a:@ nip			\ get line
+			then
+	inp_buff unlock drop ;
+		
+
+
+: get_line				\  (  -- s )  wait for none empty line
+	srl_task_id @ t:notify
+	0
 	repeat
-		get_char s:+
-		dup 1 s:rsub			\ s,c --
-		"\r" s:= swap			\ f,s --
-		s:len 1 n:> 			\ f,s,f --
-		rot and					\ ignore single cr
+		drop
+		0.1 sleep
+		(get_line) s:ltrim s:rtrim
+		s:len 
 	until! 
-	s:ltrim s:rtrim	;			\ lose any leading LF from previous line
-	
+	;	
 
-: send_string	\ ( s.. )		
-		port @ swap sio:write 2drop ;
-		
-0.2 var, dly 		
-		
-: clear_serial		\ ( -- ) read and discard all chars.	
-	cr " clear serial " . cr
-	false
-	repeat
-		get_char?
-		if . drop false
-		else 
-			if ;then
-			true
-			dly @ sleep 
-		then
-	again ;	
-	
+\ terminal for testing
 
+: dummy repeat -1 sleep again ;
 
-\ ================ terminal emulator for testing modems etc =====================	
-	
 \ switch modes with ctrl+t for text and ctrl+n for numbers in hex
 	
 true var, text_mode		\ displays recvd chars as text if True and numbers if False 
 
 : display_char	\ ( "c" -- )
 	text_mode @ if  . 
-				else hex 0 s:@ . drop " " . decimal 
+				else hex 0 s:@ . drop space decimal 
 				then ;
-
+				
+: instructions	cr "^T-Text  ^N-Hex   ^P-send <DLE><ETX>    <ESC>-Exit" . cr ;
+	
 : term
 	serial_init
+	' dummy t:task cbtask_id !			\ so notify from serial task doesn't crash
+	start_serial_task
+	instructions
 	repeat
 		con:key? if 
 					con:key 
-					dup 27 n:= if drop ;; then											\ end if <ESC> key pressed
-					dup 20 n:= if drop true  text_mode ! "Text mode\n" . <CR> then  	\ 20 is ctrl+t  for text mode
-					dup 14 n:= if drop false text_mode ! "Hex mode\n"  . <CR> then  	\ 14 is ctrl+n  for hex mode
-					dup 16 n:= if drop <DLE> put_char <ETX> put_char     <CR> then		\ 16 is ctrl+p to send end of data string
-					dup putc							\ echo character to screen
-					dup 13 n:= if 10 putc then			\ add line feeds to cr
-					put_char					 	\ and send to serial port
+					dup 27 n:= if drop ;; then		\ end if <ESC> key pressed
+					dup 31 n:>						\ not control chr
+					if	dup putc send_string		\ echo to screen and send to serial
+					else
+						dup 20 n:= if true  text_mode ! "Text mode\n" . then  	\ 20 is ctrl+t  for text mode
+						dup 14 n:= if false text_mode ! "Hex mode\n"  . then  	\ 14 is ctrl+n  for hex mode
+						dup 16 n:= if <DLE><ETX> send_string		    then	\ 16 is ctrl+p to send end of data string
+						    13 n:= if "\r\n" send_string cr 			then			
+					then
 				 then
-		get_char? if display_char then		\ display recvd chars
+		(get_line) s:len if text_mode @ if . else hex dump$  then else drop then
 	again 
+	kill_tasks
 	close_serial ;						
 .s	
-	
-
-			 
